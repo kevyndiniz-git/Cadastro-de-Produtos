@@ -5,6 +5,48 @@ ESTOQUE_FILE = r"C:\Users\rosec\Downloads\desafio cadastro\atividade cadastro\es
 
 # --- FUNÇÕES DE ARQUIVO E ESTOQUE PRINCIPAL ---
 
+def atualizar_item(estoque):
+    """Movimentar entrada e saida do estoque"""
+    print("\n=== Movimentar Estoque (Entrada/Saída) ===")
+    codigo = input("Digite o código do item: ".upper().strip())
+    item = next((p for p in estoque if p ["Código"] == codigo),None)
+
+    if not item:
+        print("Item não encontrado.")
+        return
+    
+    tipo = ""
+    while tipo not in ("E","S"):
+        tipo = input("Tipo (E = Entrada | S = Saída): ").strip().upper()
+
+        try:
+            qtd_mov = float(input('Quantidade da movimentção: '))
+            if qtd_mov < 0:
+                print ("Quantidade inválida. Operação cancelada.")
+                return
+        except ValueError:
+            print("Entrada inválida. Operação cancelada.")
+
+        qtd_atual = item["Quantidade"]
+        valor_unit = item["Valor Unitário"]
+
+        if tipo == "E":
+            item["Quantidade"] = qtd_atual + qtd_mov
+            print(f"Entrada registrada: +{qtd_mov}")
+        else:
+            if qtd_mov > qtd_atual:
+                print(f"Erro: saída maior que estoque atual ({qtd_atual}). Opereção cancelada.")
+                return
+            item ["Quantidade"] = qtd_atual - qtd_mov
+            print(f"Saída registrada: -{qtd_mov}")
+
+        item ["Valor Total"] = item["Quantidade"] * valor_unit
+
+        salvar_estoque(estoque)
+
+        print("\nItem atualizado:")
+        print(f"Código: {item['Código']} | Descrição: {item['Descrição do Item' ]} | Quantidade: {item['Quantidade']} | Valor Total: R$ {item['Valor Total']:.2f}")
+
 def carregar_estoque():
     """Carrega os produtos do Excel para a lista em memória."""
     if os.path.exists(ESTOQUE_FILE):
@@ -13,242 +55,153 @@ def carregar_estoque():
             return df.to_dict(orient="records")
         except Exception as e:
             print(f"Erro ao carregar o arquivo '{ESTOQUE_FILE}': {e}")
-            print("Verifique se o arquivo está fechado e no formato correto.")
     print(f"Aviso: Arquivo '{ESTOQUE_FILE}' não encontrado. Iniciando com estoque vazio.")
     return []
 
 def salvar_estoque(estoque_lista):
     """Salva os produtos da lista em memória no Excel."""
-    # Garante que todas as colunas necessárias estão presentes
     colunas = ["Código", "Descrição do Item", "Categoria", "Unidade", "Valor Unitário", "Quantidade", "Valor Total"]
     df = pd.DataFrame(estoque_lista, columns=colunas)
-    df.to_excel(ESTOQUE_FILE, index=False)
-    print("Estoque atualizado no Excel.")
+    try:
+        df.to_excel(ESTOQUE_FILE, index=False)
+        print("Estoque atualizado no Excel.")
+    except PermissionError:
+        print(f"Erro: Feche o arquivo '{ESTOQUE_FILE}' antes de salvar.")
 
 def extract_quantity_from_unit(unit_str):
-    """Tenta extrair um número inteiro do início da string de unidade. Ex: '20un' -> 20"""
-    num_str = ''
-    for char in unit_str:
-        if char.isdigit():
-            num_str += char
-        elif num_str:
-            # Pára quando encontra um não-dígito após dígitos
-            break
+    """Extrai o primeiro número encontrado na string da unidade, padrão 1 se não achar."""
+    num_str = ''.join(filter(str.isdigit, unit_str))
     try:
-        # Retorna o número extraído ou 1 (padrão para 'un', 'kg', 'L', etc.)
         return int(num_str) if num_str else 1
     except ValueError:
         return 1
 
 def obter_dados_item():
-    """Pede e retorna os dados do item na ordem solicitada, usando o campo Unidade para Quantidade."""
+    """Pede e retorna os dados do item."""
     print("-" * 30)
     codigo = input("Código do item: ").upper().strip()
     descricao = input("Descrição do Item: ").strip()
     categoria = input("Categoria (Matéria-Prima ou Produto Acabado): ").strip()
-    unidade_str = input("Unidade (ex: kg, L, un): ").strip() # Armazena a string completa
+    unidade_str = input("Unidade (ex: 20un, kg, L): ").strip()
 
-    # ORDEM EXATA SOLICITADA
     try:
         valor_un = float(input("Valor Unitário (R$): "))
-        
-        # LOGICA NOVA: Extrai a quantidade da string de unidade
-        quantidade = extract_quantity_from_unit(unidade_str) 
-        
-        # CÁLCULO OBRIGATÓRIO: Valor Total = Valor Unitário x Quantidade extraída
+        quantidade = extract_quantity_from_unit(unidade_str)
         valor_total = valor_un * quantidade
-        
     except ValueError:
-        print("Entrada inválida para Valor. Usando 0.")
+        print("Entrada inválida. Usando 0 para valores.")
         valor_un = 0.0
         quantidade = 0
         valor_total = 0.0
-        
+
     return {
-        "Código": codigo, 
-        "Descrição do Item": descricao, 
-        "Categoria": categoria, 
-        "Unidade": unidade_str, # Guarda a string original (ex: "20un")
+        "Código": codigo,
+        "Descrição do Item": descricao,
+        "Categoria": categoria,
+        "Unidade": unidade_str,
         "Valor Unitário": valor_un,
-        "Quantidade": quantidade, # Guarda o número extraído (ex: 20)
+        "Quantidade": quantidade,
         "Valor Total": valor_total
     }
 
 def adicionar_ao_estoque(estoque_lista, produto):
-    """Adiciona um produto ou atualiza se o código já existir."""
+    """Adiciona ou atualiza produto e salva imediatamente."""
     indices = [i for i, item in enumerate(estoque_lista) if item["Código"] == produto["Código"]]
-
     if indices:
         estoque_lista[indices[0]] = produto
         print(f"\nProduto {produto['Código']} atualizado!")
     else:
         estoque_lista.append(produto)
         print(f"\nProduto {produto['Código']} adicionado!")
-        
     salvar_estoque(estoque_lista)
 
-
-def exibir_pilha(estoque_lista, titulo="Pilha de Produtos"):
-    """Exibe os itens em formato de pilha (último no topo), mostrando Valor Unitário e Valor Total."""
+def exibir_pilha(estoque_lista, titulo="Pilha de Produtos", limite=10):
+    """Exibe itens em pilha (último no topo)."""
     if not estoque_lista:
         print("\nNenhum produto cadastrado.")
         return
-        
     print(f"\n--- {titulo} (Mais Recente no Topo) ---")
-    
-    # Colunas de exibição
-    print(f"{'CÓDIGO':<10} | {'DESCRIÇÃO DO ITEM':<30} | {'UND':<8} | {'QTD':<5} | {'R$ UN':<10} | {'R$ TOTAL':<12}")
+    print(f"{'CÓDIGO':<10} | {'DESCRIÇÃO':<30} | {'UND':<8} | {'QTD':<5} | {'R$ UN':<10} | {'R$ TOTAL':<12}")
     print("-" * 90)
-    
-    for produto in reversed(estoque_lista):
-        valor_un = produto.get("Valor Unitário", 0.0)
-        quantidade = produto.get("Quantidade", 0)
-        valor_total_exibicao = produto.get("Valor Total", valor_un * quantidade)
-        
-        print(
-            f"{produto['Código']:<10} | "
-            f"{produto['Descrição do Item']:<30} | "
-            f"{produto['Unidade']:<8} | "
-            f"{quantidade:<5} | "
-            f"R$ {valor_un:<5.2f} | "
-            f"R$ {valor_total_exibicao:<7.2f}"
-        )
+    for produto in reversed(estoque_lista[-limite:]):
+        print(f"{produto['Código']:<10} | {produto['Descrição do Item']:<30} | {produto['Unidade']:<8} | "
+              f"{produto['Quantidade']:<5} | R$ {produto['Valor Unitário']:<5.2f} | R$ {produto['Valor Total']:<7.2f}")
     print("-" * 90)
 
 def excluir_item(estoque_lista):
-    """Remove um item do estoque pelo código e salva a alteração."""
+    """Remove item pelo código e salva."""
     if not estoque_lista:
         print("\nNenhum produto para excluir.")
         return
-        
     codigo = input("Digite o código do item para excluir: ").upper().strip()
-    
-    estoque_atualizado = [produto for produto in estoque_lista if produto["Código"] != codigo]
-    
+    estoque_atualizado = [p for p in estoque_lista if p["Código"] != codigo]
     if len(estoque_atualizado) < len(estoque_lista):
         estoque_lista[:] = estoque_atualizado
         print(f"\nProduto {codigo} excluído com sucesso!")
         salvar_estoque(estoque_lista)
     else:
-        print("Código não encontrado na pilha atual.")
+        print("Código não encontrado.")
 
 def consultar_dados():
-    """Consulta dados diretamente no arquivo Excel."""
+    """Consulta produtos direto no Excel."""
     if not os.path.exists(ESTOQUE_FILE):
-        print("Arquivo Excel não encontrado. Por favor, cadastre um item primeiro.")
+        print("Arquivo não encontrado.")
         return
-        
     try:
         df = pd.read_excel(ESTOQUE_FILE)
     except Exception as e:
         print(f"Erro ao abrir arquivo: {e}")
         return
-    
     while True:
-        codigo = input("Digite o código do item (ou 'sair' para encerrar a consulta): ").upper().strip()
+        codigo = input("Código do item (ou 'sair'): ").upper().strip()
         if codigo == "SAIR":
-            print("Encerrando consulta...")
             break
-
         item = df[df["Código"] == codigo]
         if not item.empty:
-            print("\nItem encontrado (do Excel):")
             print(item.to_string(index=False))
         else:
             print("Código não encontrado.")
 
-# --- FUNÇÃO DE EXPORTAÇÃO ---
-
-def exportar_para_excel(dados, arquivo):
-    """Exporta para Excel usando Pandas."""
-    if not dados:
-        print("\nNão há dados para exportar.")
-        return
-    try:
-        df = pd.DataFrame(dados)
-        df.to_excel(arquivo, index=False)
-        print(f"\n[SUCESSO] Dados exportados para o Excel: {arquivo}")
-    except Exception as e:
-        print(f"\n[ERRO] Falha ao exportar para Excel: {e}")
-
-def menu_exportacao_final(dados):
-    """Pergunta sobre a exportação, agora apenas para Excel."""
-    if not dados:
-        print("Nenhum item cadastrado para exportação.")
-        return
-        
+def cadastro_em_loop(estoque_lista):
+    """Cadastro simplificado com atualização direta no estoque principal."""
+    print("\n--- INICIANDO CADASTRO ---")
     while True:
-        formato = input("Deseja exportar os dados para o Excel? (s/n): ").lower().strip()
-        
-        if formato == "s":
-            exportar_para_excel(dados, ESTOQUE_FILE) 
-            break
-        elif formato == "n":
-            print("Exportação cancelada.")
-            break
-        else:
-            print("Opção inválida. Digite s ou n.")
-            
-# --- FLUXO DE CADASTRO OBRIGATÓRIO (Opção 1) ---
-
-def cadastro_em_loop():
-    """Implementa o fluxo de cadastro em loop, pilha por item e exportação final."""
-    produtos_loop = []
-    print("\n--- INICIANDO CADASTRO SIMPLIFICADO ---")
-    
-    while True:
-        resposta = input("Deseja cadastrar um novo item? (s/n): ").lower().strip()
-        
+        resposta = input("Cadastrar novo item? (s/n): ").lower().strip()
         if resposta == "s":
             novo_item = obter_dados_item()
-            
-            produtos_loop.append(novo_item)
-            
-            print("\n-- Produto cadastrado! --")
-            
-            exibir_pilha(produtos_loop, titulo="Pilha Atual")
-            
+            adicionar_ao_estoque(estoque_lista, novo_item)
+            exibir_pilha(estoque_lista, titulo="Pilha Atual")
         elif resposta == "n":
             break
-            
         else:
-            print("Opção inválida. Por favor, digite 's' para cadastrar ou 'n' para sair.")
-            
-    if produtos_loop:
-        print("\n--- RESUMO FINAL DA LISTA CADASTRADA ---")
-        exibir_pilha(produtos_loop, titulo="Lista Completa")
-        
-        menu_exportacao_final(produtos_loop)
+            print("Opção inválida. Digite 's' ou 'n'.")
 
 # --- PROGRAMA PRINCIPAL ---
-
 estoque = carregar_estoque()
 
 while True:
     print("\n--- MENU PRINCIPAL ---")
-    print("1. Cadastro Simplificado (Pilha e Exportação Final)") 
-    print("2. Consultar produtos (direto do arquivo)")
-    print("3. Visualizar pilha atual (do arquivo principal)")
-    print("4. Excluir produto da pilha")
-    print("5. Sair")
+    print("1. Cadastro Simplificado") 
+    print("2. Consultar produtos")
+    print("3. Visualizar pilha atual")
+    print("4. Excluir produto")
+    print("5- Movimentar Estoque")
+    print("6. Sair")
     
     opcao = input("Escolha uma opção: ").strip()
-
+    
     if opcao == "1":
-        cadastro_em_loop()
-
+        cadastro_em_loop(estoque)
     elif opcao == "2":
         consultar_dados()
-
     elif opcao == "3":
         exibir_pilha(estoque, titulo="Estoque Principal")
-
     elif opcao == "4":
         excluir_item(estoque)
-
     elif opcao == "5":
-        print("Saindo do sistema. Até mais!")
+        atualizar_item(estoque)
+    elif opcao == "6":
+        print("Saindo do sistema.")
         break
-
     else:
-        print("Opção inválida. Escolha um número de 1 a 5.")
+        print("Opção inválida.")
